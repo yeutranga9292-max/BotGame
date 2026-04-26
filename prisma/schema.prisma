@@ -1,0 +1,104 @@
+// Prisma schema for the Mezon vocabulary bot.
+// Database: Neon Postgres (postgresql).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+model Word {
+  id            String         @id @default(cuid())
+  text          String         @unique
+  partOfSpeech  String?
+  ipa           String?
+  meaningEn     String
+  meaningVi     String
+  exampleEn     String?
+  exampleVi     String?
+  topic         String         @default("common")
+  difficulty    Difficulty     @default(EASY)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  progress      UserProgress[]
+  quizQuestions QuizQuestion[]
+
+  @@index([topic])
+  @@index([difficulty])
+}
+
+// One row per Mezon user we have seen. We use Mezon's user_id as a stable key.
+model User {
+  id              String         @id @default(cuid())
+  mezonUserId     String         @unique
+  username        String?
+  displayName     String?
+  // Daily-streak tracking for `!streak`.
+  streakDays      Int            @default(0)
+  lastActiveDate  DateTime?
+  totalAnswered   Int            @default(0)
+  totalCorrect    Int            @default(0)
+  preferredTopic  String         @default("common")
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  progress        UserProgress[]
+  quizSessions    QuizSession[]
+}
+
+// Per-user / per-word learning state (used by spaced-repetition).
+model UserProgress {
+  id            String    @id @default(cuid())
+  userId        String
+  wordId        String
+  correctCount  Int       @default(0)
+  wrongCount    Int       @default(0)
+  // Next time this card should be shown (simple SRS).
+  nextReviewAt  DateTime  @default(now())
+  lastReviewedAt DateTime?
+  // SRS box level: 0 = new, higher = better known.
+  boxLevel      Int       @default(0)
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  word          Word      @relation(fields: [wordId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, wordId])
+  @@index([userId, nextReviewAt])
+}
+
+// Active quiz question waiting for an answer in a channel.
+model QuizSession {
+  id          String         @id @default(cuid())
+  userId      String
+  channelId   String
+  messageId   String?         // ID of the bot's quiz message (for reactions)
+  questionId  String
+  answeredAt  DateTime?
+  isCorrect   Boolean?
+  createdAt   DateTime       @default(now())
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question    QuizQuestion   @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([channelId, messageId])
+  @@index([userId, answeredAt])
+}
+
+// A snapshot of a quiz question (so we can reference the exact options later).
+model QuizQuestion {
+  id          String        @id @default(cuid())
+  wordId      String
+  prompt      String        // e.g. "What is the meaning of 'abandon'?"
+  options     String[]      // 4 options
+  answerIndex Int           // index into options (0-3)
+  kind        String        @default("en2vi") // "en2vi" | "vi2en" | "fillblank"
+  createdAt   DateTime      @default(now())
+  word        Word          @relation(fields: [wordId], references: [id], onDelete: Cascade)
+  sessions    QuizSession[]
+}
