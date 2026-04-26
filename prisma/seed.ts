@@ -16,10 +16,32 @@ interface WordSeed {
   difficulty?: keyof typeof Difficulty;
 }
 
+function loadWords(): WordSeed[] {
+  const wordsDir = path.join(__dirname, 'data', 'words');
+  const legacyFile = path.join(__dirname, 'data', 'words.json');
+  const all: WordSeed[] = [];
+
+  if (fs.existsSync(wordsDir)) {
+    const files = fs
+      .readdirSync(wordsDir)
+      .filter((f) => f.endsWith('.json'))
+      .sort();
+    for (const f of files) {
+      const raw = fs.readFileSync(path.join(wordsDir, f), 'utf-8');
+      const part: WordSeed[] = JSON.parse(raw);
+      all.push(...part);
+      console.log(`  - ${f}: ${part.length} words`);
+    }
+  } else if (fs.existsSync(legacyFile)) {
+    const raw = fs.readFileSync(legacyFile, 'utf-8');
+    all.push(...(JSON.parse(raw) as WordSeed[]));
+  }
+
+  return all;
+}
+
 async function main() {
-  const dataPath = path.join(__dirname, 'data', 'words.json');
-  const raw = fs.readFileSync(dataPath, 'utf-8');
-  const words: WordSeed[] = JSON.parse(raw);
+  const words = loadWords();
 
   console.log(`Seeding ${words.length} words...`);
 
